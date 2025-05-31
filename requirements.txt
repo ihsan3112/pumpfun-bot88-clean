@@ -1,0 +1,5 @@
+Flask==2.3.3
+requests==2.31.0
+solana==0.26.0
+solders==0.8.1
+base58==2.1.1
