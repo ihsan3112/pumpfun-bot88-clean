@@ -1,7 +1,7 @@
 import requests
 import time
 import threading
-from flask import Flask
+from flask import Flask, request
 from solana.rpc.api import Client
 from solana.transaction import Transaction
 from solana.publickey import PublicKey
@@ -17,18 +17,20 @@ RPC_URL = "https://rpc.ankr.com/solana"
 BUY_AMOUNT_SOL = 0.03
 BUYER_THRESHOLD = 10
 MAX_ACTIVE_TRADES = 5
+ACCESS_KEY = "sansha99"
 
 # === Inisialisasi ===
 client = Client(RPC_URL)
 app = Flask(__name__)
 robot_ready = False
 active_trades = []
+known_tokens = set()
 
 # === Load Keypair ===
 keypair = Keypair.from_secret_key(base58.b58decode(PRIVATE_KEY))
 wallet_address = keypair.public_key
 
-# === Fetch Token Baru ===
+# === Fungsi Pantau Token Baru ===
 def fetch_new_tokens():
     try:
         response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com/tokens")
@@ -38,10 +40,11 @@ def fetch_new_tokens():
     except:
         return []
 
+# === Fungsi Beli Token ===
 def buy_token(token_address):
     print(f"[BELI] Token: {token_address}")
     to_pubkey = PublicKey(token_address)
-    lamports = int(BUY_AMOUNT_SOL * 1e9)
+    lamports = int(BUY_AMOUNT_SOL * 1_000_000_000)
     tx = Transaction().add(
         transfer(
             TransferParams(
@@ -53,18 +56,21 @@ def buy_token(token_address):
     )
     try:
         result = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
-        print(f"[SUKSES BELI] Tx Hash: {result['result']}\n")
+        print(f"[SUKSES BELI] Tx Hash: {result['result']}")
     except Exception as e:
-        print(f"[GAGAL BELI] {e}\n")
+        print(f"[GAGAL BELI] {e}")
 
+# === Fungsi Dummy Harga Token ===
 def get_token_price(token_address):
-    return 1.0 + (time.time() % 10) / 100
+    return 1.0 + (time.time() % 10) / 100  # Simulasi harga naik turun
 
+# === Fungsi Jual Token ===
 def sell_token(token_address):
     print(f"[JUAL] Token: {token_address} — dijual karena turun 20% dari puncak")
     if token_address in active_trades:
         active_trades.remove(token_address)
 
+# === Pantau Harga dan Jual ===
 def monitor_price_and_sell(token_address, buy_price):
     highest = buy_price
     while True:
@@ -77,46 +83,56 @@ def monitor_price_and_sell(token_address, buy_price):
                 sell_token(token_address)
                 break
         except:
-            pass
+            break
         time.sleep(3)
 
+# === Fungsi Utama Beli Token ===
 def start_robot():
-    print("\n🤖 Robot AKTIF: Mulai berburu token Pump.fun...\n")
-    known_tokens = set()
-    while robot_ready:
-        tokens = fetch_new_tokens()
-        for token in tokens:
-            address = token.get("address")
-            buyers = token.get("buyers")
-            if address and buyers and address not in known_tokens and buyers >= BUYER_THRESHOLD:
-                if len(active_trades) >= MAX_ACTIVE_TRADES:
-                    continue
-                known_tokens.add(address)
-                active_trades.append(address)
-                buy_token(address)
-                buy_price = get_token_price(address)
-                threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
-                time.sleep(3)
+    tokens = fetch_new_tokens()
+    for token in tokens:
+        address = token.get("address")
+        buyers = token.get("buyers")
+        if not address or not buyers or address in known_tokens:
+            continue
+        if buyers >= BUYER_THRESHOLD and len(active_trades) < MAX_ACTIVE_TRADES:
+            known_tokens.add(address)
+            active_trades.append(address)
+            buy_token(address)
+            buy_price = get_token_price(address)
+            threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
         time.sleep(2)
 
-@app.route('/start')
-def trigger():
+# === Endpoint Web ===
+@app.route('/resume')
+def resume():
     global robot_ready
+    key = request.args.get("key", "")
+    if key != ACCESS_KEY:
+        return "❌ Kunci salah", 403
     robot_ready = True
-    return "✅ Robot dilepaskan dan mulai berburu token!"
+    return "✅ Bot dilanjutkan!"
 
 @app.route('/pause')
 def pause():
     global robot_ready
+    key = request.args.get("key", "")
+    if key != ACCESS_KEY:
+        return "❌ Kunci salah", 403
     robot_ready = False
-    return "⏸️ Robot dijeda. Tidak lagi membeli token baru."
+    return "⏸️ Bot dijeda."
 
+# === Thread Utama ===
 def main_loop():
+    last_state = False
     while True:
-        if robot_ready:
-            start_robot()
+        if robot_ready and not last_state:
+            threading.Thread(target=start_robot).start()
+            last_state = True
+        elif not robot_ready:
+            last_state = False
         time.sleep(1)
 
+# === Jalankan Flask dan Bot Bersamaan ===
 if __name__ == '__main__':
     threading.Thread(target=main_loop).start()
     app.run(host='0.0.0.0', port=80)
