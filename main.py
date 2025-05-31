@@ -1,7 +1,7 @@
 import requests
 import time
 import threading
-from flask import Flask, request
+from flask import Flask
 from solana.rpc.api import Client
 from solana.transaction import Transaction
 from solana.publickey import PublicKey
@@ -12,7 +12,7 @@ import base58
 import os
 
 # === Konfigurasi ===
-PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
+PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfJR9QAXxMTvTB7LTht6adm..."
 RPC_URL = "https://rpc.ankr.com/solana"
 BUY_AMOUNT_SOL = 0.03
 BUYER_THRESHOLD = 10
@@ -33,18 +33,16 @@ wallet_address = keypair.public_key
 # === Fungsi Pantau Token Baru ===
 def fetch_new_tokens():
     try:
-        response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com/tokens")
+        response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com")
         if response.status_code == 200:
             return response.json()
         return []
     except:
         return []
 
-# === Fungsi Beli Token ===
 def buy_token(token_address):
-    print(f"[BELI] Token: {token_address}")
     to_pubkey = PublicKey(token_address)
-    lamports = int(BUY_AMOUNT_SOL * 1_000_000_000)
+    lamports = int(BUY_AMOUNT_SOL * 1e9)
     tx = Transaction().add(
         transfer(
             TransferParams(
@@ -60,17 +58,14 @@ def buy_token(token_address):
     except Exception as e:
         print(f"[GAGAL BELI] {e}")
 
-# === Fungsi Dummy Harga Token ===
 def get_token_price(token_address):
-    return 1.0 + (time.time() % 10) / 100  # Simulasi harga naik turun
+    return 1.0 + (time.time() % 10) / 100
 
-# === Fungsi Jual Token ===
 def sell_token(token_address):
     print(f"[JUAL] Token: {token_address} — dijual karena turun 20% dari puncak")
     if token_address in active_trades:
         active_trades.remove(token_address)
 
-# === Pantau Harga dan Jual ===
 def monitor_price_and_sell(token_address, buy_price):
     highest = buy_price
     while True:
@@ -86,53 +81,43 @@ def monitor_price_and_sell(token_address, buy_price):
             break
         time.sleep(3)
 
-# === Fungsi Utama Beli Token ===
 def start_robot():
+    global active_trades
     tokens = fetch_new_tokens()
     for token in tokens:
         address = token.get("address")
         buyers = token.get("buyers")
-        if not address or not buyers or address in known_tokens:
-            continue
-        if buyers >= BUYER_THRESHOLD and len(active_trades) < MAX_ACTIVE_TRADES:
+        if address and buyers and address not in known_tokens and buyers >= BUYER_THRESHOLD:
+            if len(active_trades) >= MAX_ACTIVE_TRADES:
+                continue
             known_tokens.add(address)
             active_trades.append(address)
             buy_token(address)
             buy_price = get_token_price(address)
             threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
-        time.sleep(2)
+            time.sleep(2)
+    time.sleep(3)
 
-# === Endpoint Web ===
+# === Endpoint Trigger Web ===
 @app.route('/resume')
-def resume():
+def trigger():
     global robot_ready
-    key = request.args.get("key", "")
-    if key != ACCESS_KEY:
-        return "❌ Kunci salah", 403
     robot_ready = True
-    return "✅ Bot dilanjutkan!"
+    return "✅ Bot dilanjutkan dan mulai berburu token!"
 
 @app.route('/pause')
 def pause():
     global robot_ready
-    key = request.args.get("key", "")
-    if key != ACCESS_KEY:
-        return "❌ Kunci salah", 403
     robot_ready = False
-    return "⏸️ Bot dijeda."
+    return "⏸️ Bot dijeda. Tidak lagi membeli token baru."
 
-# === Thread Utama ===
+# === Thread Utama Bot ===
 def main_loop():
-    last_state = False
     while True:
-        if robot_ready and not last_state:
-            threading.Thread(target=start_robot).start()
-            last_state = True
-        elif not robot_ready:
-            last_state = False
+        if robot_ready:
+            start_robot()
         time.sleep(1)
 
-# === Jalankan Flask dan Bot Bersamaan ===
+# === Jalankan Bot (tanpa app.run) ===
 if __name__ == '__main__':
     threading.Thread(target=main_loop).start()
-    app.run(host='0.0.0.0', port=80)
