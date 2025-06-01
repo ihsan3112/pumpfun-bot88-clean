@@ -5,8 +5,8 @@ from flask import Flask, request
 from solders.keypair import Keypair
 
 # === Konfigurasi ===
-PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
-BUY_AMOUNT_SOL = 0.1
+PRIVATE_KEY = "3erUyYNgnbz3HFbkip7r2uHjrmNUU3bvTpMdjZfkfJR9QAXktvVTB7LTht6admGrn5yYi3oK6F6j2RGmF7LQB"
+BUY_AMOUNT_SOL = 0.01
 BUYER_THRESHOLD = 10
 MAX_ACTIVE_TRADES = 3
 
@@ -29,7 +29,7 @@ robot_ready = False
 def fetch_new_tokens():
     try:
         headers = { "User-Agent": "Mozilla/5.0" }
-        response = requests.get("https://pump.fun/api/trending")
+        response = requests.get("https://pump.fun/api/trending", headers=headers)
         return response.json()
     except Exception as e:
         print("⚠️ Gagal fetch token:", e)
@@ -37,26 +37,18 @@ def fetch_new_tokens():
 
 def buy_token(token_address):
     print(f"🟢 Membeli token: {token_address} sebesar {BUY_AMOUNT_SOL} SOL")
-    # (Simulasi pembelian nyata di sini)
+    # Simulasi pembelian nyata di sini
 
 def get_token_price(token_address):
-    try:
-        url = f"https://pump.fun/token/{token_address}"
-        response = requests.get(url)
-        html = response.text
-        start = html.find('Price') + 7
-        end = html.find('</div>', start)
-        price_str = html[start:end].replace('$','').strip()
-        return float(price_str)
-    except:
-        return 0.01  # Fallback dummy
+    # Dummy harga token (nanti bisa diintegrasikan ke API asli)
+    return 0.01
 
 def sell_token(token_address):
     print(f"🔴 Menjual token: {token_address}")
-    # (Simulasi penjualan di sini)
+    # Simulasi penjualan nyata di sini
 
 def monitor_price_and_sell(token_address, buy_price):
-    print(f"📉 Monitoring harga {token_address} dari {buy_price}")
+    print(f"📈 Monitoring harga {token_address} dari {buy_price}")
     highest_price = buy_price
     while True:
         try:
@@ -69,12 +61,12 @@ def monitor_price_and_sell(token_address, buy_price):
                 break
             time.sleep(5)
         except Exception as e:
-            print("❌ Gagal monitoring:", e)
+            print("⚠️ Gagal monitoring:", e)
             break
 
 def start_robot():
     global active_trades, known_tokens
-    print("🤖 Trigger diterima. Bot mulai bekerja...")
+    print("⚙️ Trigger diterima. Bot mulai bekerja...")
 
     tokens = fetch_new_tokens()
     for token in tokens:
@@ -101,13 +93,14 @@ def start_robot():
 @app.route('/trigger')
 def trigger():
     global robot_ready
+    robot_ready = True
     threading.Thread(target=start_robot).start()
-    return "⚙️ Bot dimulai melalui trigger URL!"
+    return "✅ Bot dimulai melalui trigger URL!"
 
 @app.route('/')
 def status():
     return "✅ Bot standby. Siap menerima trigger."
 
 if __name__ == '__main__':
-    print("⏳ Bot standby, menunggu trigger...")
+    print("📡 Bot standby, menunggu trigger...")
     app.run(host='0.0.0.0', port=3000)
