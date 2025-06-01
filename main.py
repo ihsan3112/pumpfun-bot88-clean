@@ -30,77 +30,37 @@ known_tokens = set()
 keypair = Keypair.from_secret_key(base58.b58decode(PRIVATE_KEY))
 wallet_address = str(keypair.public_key)
 
-# === Fungsi Fetch Token ===
 def fetch_new_tokens():
-    try:
-        res = requests.get("https://pump.fun/api/tokens")
-        data = res.json()
-        return data
-    except Exception as e:
-        print("Gagal fetch token:", e)
-        return []
+    response = requests.get("https://pump.fun/api/tokens")
+    return response.json()
 
-# === Fungsi Harga Token ===
-def get_token_price(address):
-    try:
-        res = requests.get(f"https://pump.fun/api/token/{address}")
-        return res.json().get("price", 0)
-    except:
-        return 0
+def buy_token(token_address):
+    print(f"💰 Membeli token: {token_address}")
 
-# === Fungsi Auto-Buy Token ===
-def buy_token(address):
-    print("🟢 Membeli token:", address)
-    tx = Transaction()
-    tx.add(
-        transfer(
-            TransferParams(
-                from_pubkey=keypair.public_key,
-                to_pubkey=PublicKey(address),
-                lamports=int(BUY_AMOUNT_SOL * 1_000_000_000),
-            )
-        )
-    )
-    try:
-        response = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
-        print("✅ Transaksi:", response)
-    except Exception as e:
-        print("❌ Gagal transaksi:", e)
+def get_token_price(token_address):
+    return 0.01
 
-# === Fungsi Penjualan Token (dummy) ===
-def sell_token(address):
-    print("🔴 Menjual token:", address)
-    # Placeholder jual, bisa isi metode DEX di sini
-    pass
+def sell_token(token_address):
+    print(f"💸 Menjual token: {token_address}")
 
-# === Fungsi Pantau Harga ===
-def monitor_price_and_sell(address, buy_price):
-    peak_price = buy_price
-    stop_loss_triggered = False
-    while True:
-        try:
-            current_price = get_token_price(address)
-            if current_price > peak_price:
-                peak_price = current_price
-            elif current_price < peak_price * 0.8:
-                print("📉 Trailing stop triggered, menjual:", address)
-                sell_token(address)
-                break
-        except:
-            pass
-        time.sleep(3)
+def monitor_price_and_sell(token_address, buy_price):
+    print(f"📈 Monitoring harga {token_address} dari {buy_price}")
 
-# === Fungsi Utama Bot ===
 def start_robot():
-    global active_trades
+    global active_trades, known_tokens
+
     tokens = fetch_new_tokens()
     for token in tokens:
-        address = token.get("address")
-        buyer_count = token.get("buyerCount", 0)
-        if not address or address in known_tokens or buyer_count < BUYER_THRESHOLD:
+        address = token["address"]
+        buyers = token.get("buyerCount", 0)
+
+        if address in known_tokens:
+            continue
+        if buyers < BUYER_THRESHOLD:
             continue
         if len(active_trades) >= MAX_ACTIVE_TRADES:
             continue
+
         known_tokens.add(address)
         active_trades.append(address)
         buy_token(address)
@@ -108,7 +68,6 @@ def start_robot():
         threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
         time.sleep(2)
 
-# === Endpoint Flask ===
 @app.route('/start')
 def trigger():
     global robot_ready
@@ -125,12 +84,15 @@ def pause():
     robot_ready = False
     return "⏸️ Bot dijeda"
 
-# === Thread utama ===
 def background_loop():
     while True:
         if robot_ready:
             start_robot()
         time.sleep(1)
 
-# === Start Bot Otomatis Saat App Jalan ===
 threading.Thread(target=background_loop, daemon=True).start()
+
+# ✅ Tambahkan agar Railway tahu service berjalan
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
