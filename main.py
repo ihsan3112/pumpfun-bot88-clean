@@ -6,14 +6,14 @@ from solders.keypair import Keypair
 # === Konstanta / Konfigurasi ===
 PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
 RPC_URL = "https://api.mainnet-beta.solana.com"
-BUY_AMOUNT_SOL = 0.03
+BUY_AMOUNT_SOL = 0.01  # ✅ Revisi pembelian 0.01 SOL
 BUYER_THRESHOLD = 10
 MAX_ACTIVE_TRADES = 3
 
 # === Inisialisasi Keypair ===
 try:
     keypair = Keypair.from_base58_string(PRIVATE_KEY)
-    wallet_address = str(keypair.public_key)
+    wallet_address = str(keypair.pubkey())  # ✅ Perbaikan di sini
     print(f"👛 Wallet aktif: {wallet_address}")
 except Exception as e:
     print("❌ Gagal memuat PRIVATE_KEY. Pastikan format benar (base58)")
@@ -34,7 +34,7 @@ def fetch_new_tokens():
         return []
 
 def buy_token(token_address):
-    print(f"🟢 Membeli token: {token_address}")
+    print(f"🟢 Membeli token: {token_address} sebesar {BUY_AMOUNT_SOL} SOL")
     # Tambahkan logika pembelian nyata di sini
 
 def get_token_price(token_address):
@@ -47,7 +47,6 @@ def sell_token(token_address):
 def monitor_price_and_sell(token_address, buy_price):
     print(f"📊 Monitoring harga {token_address} dari {buy_price}")
     # Tambahkan trailing stop di sini
-    # Loop pemantauan harga
 
 def start_robot():
     global active_trades, known_tokens
