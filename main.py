@@ -3,13 +3,8 @@ import time
 import threading
 from flask import Flask, request
 from solana.rpc.api import Client
-from solana.transaction import Transaction
-from solana.publickey import PublicKey
 from solana.keypair import Keypair
-from solana.system_program import transfer, TransferParams
-from solana.rpc.types import TxOpts
 import base58
-import os
 
 # === Konfigurasi ===
 PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
@@ -26,7 +21,7 @@ robot_ready = False
 active_trades = []
 known_tokens = set()
 
-# === Load Keypair ===
+# === Wallet ===
 keypair = Keypair.from_secret_key(base58.b58decode(PRIVATE_KEY))
 wallet_address = str(keypair.public_key)
 
@@ -48,15 +43,12 @@ def monitor_price_and_sell(token_address, buy_price):
 
 def start_robot():
     global active_trades, known_tokens
-
     tokens = fetch_new_tokens()
     for token in tokens:
         address = token["address"]
         buyers = token.get("buyerCount", 0)
 
-        if address in known_tokens:
-            continue
-        if buyers < BUYER_THRESHOLD:
+        if address in known_tokens or buyers < BUYER_THRESHOLD:
             continue
         if len(active_trades) >= MAX_ACTIVE_TRADES:
             continue
@@ -90,9 +82,5 @@ def background_loop():
             start_robot()
         time.sleep(1)
 
+# Mulai loop saat dijalankan
 threading.Thread(target=background_loop, daemon=True).start()
-
-# ✅ Tambahkan agar Railway tahu service berjalan
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
