@@ -1,105 +1,69 @@
-import requests
-import threading
 import time
-from flask import Flask, request
-from solders.keypair import Keypair
+from solana.rpc.api import Client
+from solana.transaction import Transaction
+from solana.publickey import PublicKey
+from solana.keypair import Keypair
+from solana.rpc.types import TxOpts
 
-# === Konfigurasi ===
-PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
+# Konfigurasi Wallet & Endpoint
+PRIVATE_KEY = bytes.fromhex("3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB")
+WALLET = Keypair.from_secret_key(PRIVATE_KEY)
+SOLANA_URL = "https://api.mainnet-beta.solana.com"
+client = Client(SOLANA_URL)
+
+# Konfigurasi Bot
 BUY_AMOUNT_SOL = 0.01
-BUYER_THRESHOLD = 20
-MAX_ACTIVE_TRADES = 3
+BUYER_COUNT_LIMIT = 20
+TRAILING_STOP_PERCENT = 0.05
+token_history = {}
 
-# === Setup Wallet ===
-try:
-    keypair = Keypair.from_base58_string(PRIVATE_KEY)
-    wallet_address = str(keypair.pubkey())
-    print(f"✅ Wallet aktif: {wallet_address}")
-except Exception as e:
-    print("❌ Gagal memuat PRIVATE_KEY:", e)
-    exit(1)
-
-# === Bot State ===
-active_trades = []
-known_tokens = set()
-app = Flask(__name__)
-robot_ready = False
-
-# === Bot Logic ===
-def fetch_new_tokens():
-    try:
-        headers = { "User-Agent": "Mozilla/5.0" }
-        response = requests.get("https://pump.fun/api/trending", headers=headers)
-        return response.json()
-    except Exception as e:
-        print("❌ Gagal fetch token:", e)
-        return []
-
+# Fungsi Beli Token
 def buy_token(token_address):
-    print(f"🟢 Membeli token: {token_address} sebesar {BUY_AMOUNT_SOL} SOL")
-    # Tambahkan logika pembelian nyata di sini
+    print(f"🚀 Membeli token: {token_address}")
+    token_history[token_address] = {
+        "bought_price": get_price(token_address),
+        "highest_price": get_price(token_address)
+    }
 
-def get_token_price(token_address):
-    # Dummy harga, ganti dengan fetch harga token sebenarnya jika bisa
-    return 0.01
+# Fungsi Harga Token (Dummy)
+def get_price(token_address):
+    return 1.0  # Simulasi harga awal
 
+# Fungsi Cek Trailing Stop
+def check_trailing_stop(token_address):
+    current_price = get_price(token_address)
+    if current_price > token_history[token_address]["highest_price"]:
+        token_history[token_address]["highest_price"] = current_price
+    drop = (token_history[token_address]["highest_price"] - current_price) / token_history[token_address]["highest_price"]
+    if drop >= TRAILING_STOP_PERCENT:
+        print(f"🔻 Menjual {token_address} - harga turun {drop*100:.2f}% dari puncak")
+        sell_token(token_address)
+
+# Fungsi Jual Token (Dummy)
 def sell_token(token_address):
-    print(f"🔴 Menjual token: {token_address}")
-    # Tambahkan logika penjualan nyata di sini
+    print(f"💰 Token dijual: {token_address}")
+    del token_history[token_address]
 
-def monitor_price_and_sell(token_address, buy_price):
-    print(f"📊 Monitoring harga {token_address} dari {buy_price}")
-    highest_price = buy_price
+# Fungsi Dapatkan Token Baru (Dummy)
+def get_new_tokens():
+    return [
+        {"address": "TokenA1", "buyerCount": 12},
+        {"address": "TokenB2", "buyerCount": 5},
+        {"address": "TokenC3", "buyerCount": 18}
+    ]
+
+# Bot Utama
+def run_bot():
+    print("🤖 Bot dijalankan...")
     while True:
-        try:
-            current_price = get_token_price(token_address)
-            if current_price > highest_price:
-                highest_price = current_price
-            if current_price <= highest_price * 0.95:  # TURUN 5%
-                print(f"⚠️ Harga turun 5%, jual {token_address} di harga {current_price}")
-                sell_token(token_address)
-                break
-        except Exception as e:
-            print("❌ Gagal monitoring:", e)
-            break
+        tokens = get_new_tokens()
+        for token in tokens:
+            if 10 < token["buyerCount"] <= BUYER_COUNT_LIMIT:
+                if token["address"] not in token_history:
+                    buy_token(token["address"])
+        for token_address in list(token_history.keys()):
+            check_trailing_stop(token_address)
         time.sleep(5)
 
-def start_robot():
-    global active_trades, known_tokens
-    print("⚙️ Trigger diterima. Bot mulai bekerja...")
-
-    tokens = fetch_new_tokens()
-    for token in tokens:
-        try:
-            address = token["address"]
-            buyers = token.get("buyerCount", 0)
-
-            if address in known_tokens or buyers < BUYER_THRESHOLD:
-                continue
-            if len(active_trades) >= MAX_ACTIVE_TRADES:
-                continue
-
-            known_tokens.add(address)
-            active_trades.append(address)
-            print(f"✅ Token valid: {address} (buyers: {buyers})")
-            buy_token(address)
-            buy_price = get_token_price(address)
-            threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
-            time.sleep(2)
-        except Exception as e:
-            print("❌ Error saat proses token:", e)
-
-# === Flask API ===
-@app.route('/trigger')
-def trigger():
-    global robot_ready
-    threading.Thread(target=start_robot).start()
-    return "✅ Bot dimulai melalui trigger URL!"
-
-@app.route('/')
-def status():
-    return "⚙️ Bot standby. Siap menerima trigger."
-
-if __name__ == "__main__":
-    print("⚙️ Bot standby, menunggu trigger...")
-    app.run(host="0.0.0.0", port=3000)
+# Jalankan
+run_bot()
