@@ -9,6 +9,7 @@ from solana.keypair import Keypair
 from solana.system_program import transfer, TransferParams
 from solana.rpc.types import TxOpts
 import base58
+import os
 
 # === Konfigurasi ===
 PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
@@ -27,79 +28,85 @@ known_tokens = set()
 
 # === Load Keypair ===
 keypair = Keypair.from_secret_key(base58.b58decode(PRIVATE_KEY))
-wallet_address = keypair.public_key
+wallet_address = str(keypair.public_key)
 
-# === Fungsi Pantau Token Baru ===
+# === Fungsi Fetch Token ===
 def fetch_new_tokens():
     try:
-        response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com/")
-        if response.status_code == 200:
-            return response.json()
-        return []
-    except:
+        res = requests.get("https://pump.fun/api/tokens")
+        data = res.json()
+        return data
+    except Exception as e:
+        print("Gagal fetch token:", e)
         return []
 
-# === Fungsi Beli Token ===
-def buy_token(token_address):
-    print(f"[BELI] Token: {token_address}")
-    to_pubkey = PublicKey(token_address)
-    lamports = int(BUY_AMOUNT_SOL * 1e9)
-    tx = Transaction().add(
+# === Fungsi Harga Token ===
+def get_token_price(address):
+    try:
+        res = requests.get(f"https://pump.fun/api/token/{address}")
+        return res.json().get("price", 0)
+    except:
+        return 0
+
+# === Fungsi Auto-Buy Token ===
+def buy_token(address):
+    print("🟢 Membeli token:", address)
+    tx = Transaction()
+    tx.add(
         transfer(
             TransferParams(
-                from_pubkey=wallet_address,
-                to_pubkey=to_pubkey,
-                lamports=lamports
+                from_pubkey=keypair.public_key,
+                to_pubkey=PublicKey(address),
+                lamports=int(BUY_AMOUNT_SOL * 1_000_000_000),
             )
         )
     )
     try:
-        result = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
-        print(f"[SUKSES BELI] Tx Hash: {result['result']}")
+        response = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
+        print("✅ Transaksi:", response)
     except Exception as e:
-        print(f"[GAGAL BELI] {e}")
+        print("❌ Gagal transaksi:", e)
 
-# === Fungsi Dummy Harga Token ===
-def get_token_price(token_address):
-    return 1.0 + (time.time() % 10) / 100
-
-# === Fungsi Jual Token ===
-def sell_token(token_address):
-    print(f"[JUAL] Token: {token_address} dijual karena harga turun 20%")
-    if token_address in active_trades:
-        active_trades.remove(token_address)
+# === Fungsi Penjualan Token (dummy) ===
+def sell_token(address):
+    print("🔴 Menjual token:", address)
+    # Placeholder jual, bisa isi metode DEX di sini
+    pass
 
 # === Fungsi Pantau Harga ===
-def monitor_price_and_sell(token_address, buy_price):
-    highest = buy_price
+def monitor_price_and_sell(address, buy_price):
+    peak_price = buy_price
+    stop_loss_triggered = False
     while True:
         try:
-            price = get_token_price(token_address)
-            if price > highest:
-                highest = price
-            if (highest - price) / highest >= 0.2:
-                sell_token(token_address)
+            current_price = get_token_price(address)
+            if current_price > peak_price:
+                peak_price = current_price
+            elif current_price < peak_price * 0.8:
+                print("📉 Trailing stop triggered, menjual:", address)
+                sell_token(address)
                 break
         except:
-            break
+            pass
         time.sleep(3)
 
-# === Fungsi Utama ===
+# === Fungsi Utama Bot ===
 def start_robot():
     global active_trades
     tokens = fetch_new_tokens()
     for token in tokens:
         address = token.get("address")
-        buyers = token.get("buyers")
-        if address and buyers and address not in known_tokens and buyers >= BUYER_THRESHOLD:
-            if len(active_trades) >= MAX_ACTIVE_TRADES:
-                continue
-            known_tokens.add(address)
-            active_trades.append(address)
-            buy_token(address)
-            buy_price = get_token_price(address)
-            threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
-            time.sleep(2)
+        buyer_count = token.get("buyerCount", 0)
+        if not address or address in known_tokens or buyer_count < BUYER_THRESHOLD:
+            continue
+        if len(active_trades) >= MAX_ACTIVE_TRADES:
+            continue
+        known_tokens.add(address)
+        active_trades.append(address)
+        buy_token(address)
+        buy_price = get_token_price(address)
+        threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
+        time.sleep(2)
 
 # === Endpoint Flask ===
 @app.route('/start')
@@ -118,12 +125,12 @@ def pause():
     robot_ready = False
     return "⏸️ Bot dijeda"
 
-# === Thread utama (tanpa app.run) ===
+# === Thread utama ===
 def background_loop():
     while True:
         if robot_ready:
             start_robot()
         time.sleep(1)
 
-# Mulai loop saat app di-import oleh gunicorn
+# === Start Bot Otomatis Saat App Jalan ===
 threading.Thread(target=background_loop, daemon=True).start()
