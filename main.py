@@ -1,65 +1,73 @@
-import requests
+import threading
 import time
-from solders.pubkey import Pubkey
-from solders.keypair import Keypair
-from solana.rpc.api import Client
-from solana.transaction import Transaction
-from solana.system_program import TransferParams, transfer
-from solders.signature import Signature
+import random
+from flask import Flask
 
-# --- Konfigurasi utama ---
-PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
-BUY_AMOUNT_SOL = 0.01
-MAX_BUYER_COUNT = 10
-TRAILING_STOP_PERCENT = 0.20
+app = Flask(__name__)
 
-# --- Setup Solana client dan keypair ---
-client = Client("https://api.mainnet-beta.solana.com")
-keypair = Keypair.from_base58_string(PRIVATE_KEY)
-wallet_address = str(keypair.pubkey())
+robot_ready = True  # Aktif otomatis tanpa perlu trigger
+safety_lock = False  # Tidak diblokir di awal
+known_tokens = set()
+max_price_tracker = {}
 
-def get_trending_tokens():
-    try:
-        res = requests.get("https://pump.fun/api/trending")
-        tokens = res.json()
-        return tokens
-    except Exception as e:
-        print(f"Error get tokens: {e}")
-        return []
+# ===== Dummy Data Fetcher (ganti nanti dengan real API) =====
+def get_buyer_count(address):
+    return random.randint(3, 10)  # Buyer count < 20
 
-def buy_token(token):
-    # Fungsi pembelian dummy - disesuaikan dgn smart contract Pump.fun kalau mau aktif
-    print(f"[BUY] Token: {token['mint']} | Buyer count: {token['buyerCount']}")
+def get_token_price(address):
+    return random.uniform(0.002, 0.005)  # Harga token dummy
 
-def monitor_trailing_stop(token):
-    mint = token['mint']
-    max_price = 0
+def execute_buy(address):
+    print(f"[EXECUTE] Beli token {address} sebanyak 0.001 SOL")
+
+def execute_sell(address):
+    print(f"[SELL] Jual token {address} karena turun >20% dari harga tertinggi")
+
+# ===== Core Logic =====
+def buy_token(address):
+    if safety_lock:
+        print("[LOCKED] Bot dikunci")
+        return
+
+    if address in known_tokens:
+        print(f"[SKIP] Token {address} sudah dibeli")
+        return
+
+    buyer_count = get_buyer_count(address)
+    if buyer_count > 10:
+        print(f"[SKIP] Buyer count {buyer_count} terlalu tinggi")
+        return
+
+    known_tokens.add(address)
+    price = get_token_price(address)
+    max_price_tracker[address] = price
+    execute_buy(address)
+    print(f"[BUY] Token {address} @ {price:.5f} dengan buyer {buyer_count}")
+
+def check_trailing_stop():
+    for address in list(max_price_tracker.keys()):
+        current_price = get_token_price(address)
+        max_price = max_price_tracker[address]
+
+        if current_price > max_price:
+            max_price_tracker[address] = current_price
+            print(f"[UPDATE] Harga tertinggi baru {current_price:.5f} untuk {address}")
+
+        drop = (max_price - current_price) / max_price
+        if drop >= 0.2:
+            execute_sell(address)
+            del max_price_tracker[address]
+
+# ===== Main Loop (Otomatis) =====
+def start_robot():
     while True:
-        try:
-            res = requests.get(f"https://pump.fun/api/price/{mint}")
-            price = float(res.json().get("price", 0))
-            if price > max_price:
-                max_price = price
-            if price < max_price * (1 - TRAILING_STOP_PERCENT):
-                print(f"[SELL] Trailing Stop triggered: Price dropped from {max_price} to {price}")
-                # Tambahkan logika sell di sini jika mau real transaction
-                break
-            time.sleep(10)
-        except Exception as e:
-            print(f"Error monitoring stop: {e}")
-            break
+        if robot_ready:
+            dummy_token = "So11111111111111111111111111111111111111112"
+            buy_token(dummy_token)
+            check_trailing_stop()
+        time.sleep(10)
 
-def main():
-    while True:
-        tokens = get_trending_tokens()
-        for token in tokens:
-            buyer_count = token.get("buyerCount", 0)
-            if buyer_count <= MAX_BUYER_COUNT:
-                print(f"Found Token: {token['mint']} | Buyers: {buyer_count}")
-                buy_token(token)
-                monitor_trailing_stop(token)
-                time.sleep(3)  # Jeda antar pembelian
-        time.sleep(30)  # Delay polling API utama
+threading.Thread(target=start_robot, daemon=True).start()
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
