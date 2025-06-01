@@ -9,7 +9,6 @@ from solana.keypair import Keypair
 from solana.system_program import transfer, TransferParams
 from solana.rpc.types import TxOpts
 import base58
-import os
 
 # === Konfigurasi ===
 PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
@@ -56,21 +55,21 @@ def buy_token(token_address):
     )
     try:
         result = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
-        print(f"[SUKSES BELI] Tx Hash: {result['result']}\n")
+        print(f"[SUKSES BELI] Tx Hash: {result['result']}")
     except Exception as e:
-        print(f"[GAGAL BELI] {e}\n")
+        print(f"[GAGAL BELI] {e}")
 
-# === Fungsi Dummy Harga Token (simulasi, perlu diganti API harga real) ===
+# === Fungsi Dummy Harga Token ===
 def get_token_price(token_address):
     return 1.0 + (time.time() % 10) / 100
 
 # === Fungsi Jual Token ===
 def sell_token(token_address):
-    print(f"[JUAL] Token: {token_address} – dijual karena turun 20% dari puncak")
+    print(f"[JUAL] Token: {token_address} dijual karena harga turun 20%")
     if token_address in active_trades:
         active_trades.remove(token_address)
 
-# === Fungsi Pantau Harga dan Jual ===
+# === Fungsi Pantau Harga ===
 def monitor_price_and_sell(token_address, buy_price):
     highest = buy_price
     while True:
@@ -78,15 +77,14 @@ def monitor_price_and_sell(token_address, buy_price):
             price = get_token_price(token_address)
             if price > highest:
                 highest = price
-            drop = (highest - price) / highest
-            if drop >= 0.2:
+            if (highest - price) / highest >= 0.2:
                 sell_token(token_address)
                 break
         except:
             break
         time.sleep(3)
 
-# === Fungsi Start Bot ===
+# === Fungsi Utama ===
 def start_robot():
     global active_trades
     tokens = fetch_new_tokens()
@@ -103,33 +101,29 @@ def start_robot():
             threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
             time.sleep(2)
 
-# === Endpoint Trigger Web ===
+# === Endpoint Flask ===
 @app.route('/start')
 def trigger():
     global robot_ready
-    key = request.args.get("key")
-    if key != ACCESS_KEY:
-        return "⛔ Unauthorized"
+    if request.args.get("key") != ACCESS_KEY:
+        return "Unauthorized", 403
     robot_ready = True
-    return "✅ Robot dilepaskan dan mulai berburu token!"
+    return "✅ Bot aktif!"
 
 @app.route('/pause')
 def pause():
     global robot_ready
-    key = request.args.get("key")
-    if key != ACCESS_KEY:
-        return "⛔ Unauthorized"
+    if request.args.get("key") != ACCESS_KEY:
+        return "Unauthorized", 403
     robot_ready = False
-    return "⏸️ Robot dijeda. Tidak lagi membeli token baru."
+    return "⏸️ Bot dijeda"
 
-# === Thread Utama Bot ===
-def main_loop():
+# === Thread utama (tanpa app.run) ===
+def background_loop():
     while True:
         if robot_ready:
             start_robot()
         time.sleep(1)
 
-# === Jalankan Server Flask dan Bot Bersamaan ===
-if __name__ == '__main__':
-    threading.Thread(target=main_loop).start()
-    app.run(host='0.0.0.0', port=80)
+# Mulai loop saat app di-import oleh gunicorn
+threading.Thread(target=background_loop, daemon=True).start()
