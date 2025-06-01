@@ -12,7 +12,7 @@ import base58
 import os
 
 # === Konfigurasi ===
-PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfJR9QAXxMTvTB7LTht6adm..."
+PRIVATE_KEY = "3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB"
 RPC_URL = "https://rpc.ankr.com/solana"
 BUY_AMOUNT_SOL = 0.03
 BUYER_THRESHOLD = 10
