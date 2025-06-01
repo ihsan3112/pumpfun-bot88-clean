@@ -1,7 +1,7 @@
 import requests
 import time
 import threading
-from flask import Flask
+from flask import Flask, request
 from solana.rpc.api import Client
 from solana.transaction import Transaction
 from solana.publickey import PublicKey
@@ -33,14 +33,16 @@ wallet_address = keypair.public_key
 # === Fungsi Pantau Token Baru ===
 def fetch_new_tokens():
     try:
-        response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com")
+        response = requests.get("https://client-api-2-74b6e9733e6d.herokuapp.com/")
         if response.status_code == 200:
             return response.json()
         return []
     except:
         return []
 
+# === Fungsi Beli Token ===
 def buy_token(token_address):
+    print(f"[BELI] Token: {token_address}")
     to_pubkey = PublicKey(token_address)
     lamports = int(BUY_AMOUNT_SOL * 1e9)
     tx = Transaction().add(
@@ -54,18 +56,21 @@ def buy_token(token_address):
     )
     try:
         result = client.send_transaction(tx, keypair, opts=TxOpts(skip_preflight=True))
-        print(f"[SUKSES BELI] Tx Hash: {result['result']}")
+        print(f"[SUKSES BELI] Tx Hash: {result['result']}\n")
     except Exception as e:
-        print(f"[GAGAL BELI] {e}")
+        print(f"[GAGAL BELI] {e}\n")
 
+# === Fungsi Dummy Harga Token (simulasi, perlu diganti API harga real) ===
 def get_token_price(token_address):
     return 1.0 + (time.time() % 10) / 100
 
+# === Fungsi Jual Token ===
 def sell_token(token_address):
-    print(f"[JUAL] Token: {token_address} — dijual karena turun 20% dari puncak")
+    print(f"[JUAL] Token: {token_address} – dijual karena turun 20% dari puncak")
     if token_address in active_trades:
         active_trades.remove(token_address)
 
+# === Fungsi Pantau Harga dan Jual ===
 def monitor_price_and_sell(token_address, buy_price):
     highest = buy_price
     while True:
@@ -81,6 +86,7 @@ def monitor_price_and_sell(token_address, buy_price):
             break
         time.sleep(3)
 
+# === Fungsi Start Bot ===
 def start_robot():
     global active_trades
     tokens = fetch_new_tokens()
@@ -96,20 +102,25 @@ def start_robot():
             buy_price = get_token_price(address)
             threading.Thread(target=monitor_price_and_sell, args=(address, buy_price)).start()
             time.sleep(2)
-    time.sleep(3)
 
 # === Endpoint Trigger Web ===
-@app.route('/resume')
+@app.route('/start')
 def trigger():
     global robot_ready
+    key = request.args.get("key")
+    if key != ACCESS_KEY:
+        return "⛔ Unauthorized"
     robot_ready = True
-    return "✅ Bot dilanjutkan dan mulai berburu token!"
+    return "✅ Robot dilepaskan dan mulai berburu token!"
 
 @app.route('/pause')
 def pause():
     global robot_ready
+    key = request.args.get("key")
+    if key != ACCESS_KEY:
+        return "⛔ Unauthorized"
     robot_ready = False
-    return "⏸️ Bot dijeda. Tidak lagi membeli token baru."
+    return "⏸️ Robot dijeda. Tidak lagi membeli token baru."
 
 # === Thread Utama Bot ===
 def main_loop():
@@ -118,6 +129,7 @@ def main_loop():
             start_robot()
         time.sleep(1)
 
-# === Jalankan Bot (tanpa app.run) ===
+# === Jalankan Server Flask dan Bot Bersamaan ===
 if __name__ == '__main__':
     threading.Thread(target=main_loop).start()
+    app.run(host='0.0.0.0', port=80)
