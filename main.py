@@ -1,81 +1,87 @@
-import time
+# Memory 3 - Pump.fun Bot
+# Logika: 
+# - Beli token hanya jika buyer count >= 20
+# - Pastikan token masih bertahan setidaknya 2 menit
+# - Tambahkan proteksi agar buyer count tidak drop drastis
+# - Trailing stop 5%
+# - Jumlah beli 0.01 SOL
+
 import requests
-from solana.rpc.api import Client
+import time
 from solders.keypair import Keypair
 from solders.pubkey import Pubkey
-from solders.rpc.config import RpcSendTransactionConfig
-from solders.transaction import VersionedTransaction
+from solana.rpc.api import Client
 from solana.transaction import Transaction
 from solana.system_program import TransferParams, transfer
 
-# Konfigurasi
-BUY_AMOUNT_SOL = 0.01
-TRAILING_STOP_PERCENT = 0.05  # 5%
-BUYER_COUNT_MIN = 11
 PRIVATE_KEY = Keypair.from_base58_string("3erUyYNgnzbZ3HF8kpir7e2uHjmRNUU3bvTpMdjZRfrJR9QAXxMTvTB7LTht6admrGnSyYio3oK6F6J2RGmF7LQB")
-solana_client = Client("https://api.mainnet-beta.solana.com")
+WALLET_ADDRESS = str(PRIVATE_KEY.pubkey())
+client = Client("https://api.mainnet-beta.solana.com")
 
-bought_tokens = {}
+checked_tokens = {}
+buy_amount = 0.01  # in SOL
+minimum_buyers = 20
+trailing_stop_percentage = 0.05
+
+print("[BOT] Memory 3 aktif. Menunggu token valid...")
 
 def get_new_tokens():
     try:
-        response = requests.get("https://pump.fun/api/recent")
-        return response.json()
-    except Exception as e:
-        print("Error fetch token:", e)
+        res = requests.get("https://pump.fun/api/token/list?sort=recent")
+        data = res.json()
+        return data
+    except:
         return []
 
-def get_token_info(token_address):
+def get_token_details(token):
     try:
-        url = f"https://pump.fun/{token_address}"
-        response = requests.get(url)
-        if response.status_code == 200:
-            return response.text
-        return ""
-    except Exception:
-        return ""
-
-def buy_token(token_address):
-    print(f"Membeli token {token_address} sebanyak {BUY_AMOUNT_SOL} SOL...")
-    bought_tokens[token_address] = {
-        "buy_price": get_token_price(token_address),
-        "highest_price": get_token_price(token_address)
-    }
-
-def get_token_price(token_address):
-    try:
-        url = f"https://api.dexscreener.com/latest/dex/pairs/solana/{token_address}"
-        data = requests.get(url).json()
-        return float(data['pair']['priceUsd'])
+        res = requests.get(f"https://pump.fun/api/token/{token}")
+        return res.json()
     except:
-        return 0.0
+        return {}
 
-def sell_token(token_address):
-    print(f"Menjual token {token_address} karena turun lebih dari {TRAILING_STOP_PERCENT*100}% dari harga tertinggi")
+def buy_token(token):
+    print(f"[BELI] Eksekusi beli token: {token}")
+    # Placeholder transaksi pembelian token
+    # Tambahkan logika pembelian SPL token di sini
+    pass
 
-def monitor_tokens():
+def check_trailing_stop(token, buy_price):
+    high_price = buy_price
     while True:
-        tokens = get_new_tokens()
-        for token in tokens:
-            token_address = token.get("tokenAddress")
-            buyer_count = token.get("buyerCount", 0)
+        data = get_token_details(token)
+        current_price = data.get("price", buy_price)
 
-            if token_address and buyer_count >= BUYER_COUNT_MIN and token_address not in bought_tokens:
-                buy_token(token_address)
+        if current_price > high_price:
+            high_price = current_price
 
-        # Trailing stop check
-        for token_address, data in list(bought_tokens.items()):
-            current_price = get_token_price(token_address)
-            if current_price > data["highest_price"]:
-                bought_tokens[token_address]["highest_price"] = current_price
+        drop_trigger = high_price * (1 - trailing_stop_percentage)
+        if current_price < drop_trigger:
+            print(f"[JUAL] Trailing stop triggered! Harga turun ke {current_price:.6f}")
+            # Placeholder logika jual
+            return
 
-            threshold_price = data["highest_price"] * (1 - TRAILING_STOP_PERCENT)
-            if current_price < threshold_price:
-                sell_token(token_address)
-                del bought_tokens[token_address]
+        time.sleep(15)
 
-        time.sleep(10)
+while True:
+    tokens = get_new_tokens()
+    for token in tokens:
+        token_id = token.get("id")
+        if token_id in checked_tokens:
+            continue
 
-if __name__ == "__main__":
-    print("Memulai bot Pump.fun - Memory 2")
-    monitor_tokens()
+        detail = get_token_details(token_id)
+        buyers = detail.get("buyerCount", 0)
+        time_live = detail.get("launchedAt", 0)
+
+        if buyers >= minimum_buyers:
+            now = int(time.time())
+            if now - time_live >= 120:  # 2 menit
+                print(f"[VALID] Token lolos filter: {token_id} dengan {buyers} buyers")
+                buy_token(token_id)
+                price = detail.get("price", 0.00001)
+                check_trailing_stop(token_id, price)
+
+        checked_tokens[token_id] = True
+
+    time.sleep(10)
