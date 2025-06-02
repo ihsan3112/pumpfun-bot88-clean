@@ -1,3 +1,4 @@
+print("⛔ Bot Memory 3 dihentikan sementara. Tidak ada eksekusi auto-buy saat ini.")
 # Memory 3 - Pump.fun Bot
 # Logika: 
 # - Beli token hanya jika buyer count >= 20
